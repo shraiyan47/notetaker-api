@@ -1,0 +1,439 @@
+SECURE NOTE-TAKING API — POSTMAN TEST GUIDE
+==========================================
+
+এই ফাইলটি দেখে Postman-এ endpoint-গুলো একে একে পরীক্ষা করুন।
+সব URL-এর আগে Base URL ব্যবহার হবে:
+
+    http://localhost:5000
+
+উদাহরণ: POST /api/auth/register মানে
+    POST http://localhost:5000/api/auth/register
+
+
+0. সার্ভার চালু করা
+------------------
+
+PowerShell-এ API ফোল্ডারে যান:
+
+    cd "D:\Tech\notetaker - tech interview\API"
+    npm run dev
+
+সার্ভার চালু হলে terminal-এ "MongoDB connected" এবং
+"API listening on http://localhost:5000" দেখা উচিত।
+Postman-এ URL-এ localhost:5000-ই ব্যবহার করুন।
+
+POST/PATCH request-এ Body > raw > JSON নির্বাচন করুন।
+JSON body পাঠানোর ক্ষেত্রে header:
+
+    Content-Type: application/json
+
+Protected endpoint-এ Authorization > Bearer Token-এ login-এর token দিন।
+Postman-এর Bearer Token field-এ শুধু token value দিন; "Bearer " prefix
+Postman নিজে header-এ যোগ করবে।
+অথবা header-এ লিখুন:
+
+    Authorization: Bearer <JWT_TOKEN>
+
+angle bracket-সহ placeholder পাঠাবেন না; token-এর আসল value বসাবেন।
+GET request-এর জন্য Body দেবেন না।
+
+
+1. Regular user নিবন্ধন (Register)
+-----------------------------------
+
+Method: POST
+URL: /api/auth/register
+Headers:
+    Content-Type: application/json
+
+Body:
+{
+  "name": "Test User One",
+  "email": "test.user.one@example.com",
+  "password": "TestPass123!",
+  "interests": ["chess", "reading", "chess"]
+}
+
+সফল ফল:
+    Status: 201 Created
+
+Response-এ token এবং user object থাকবে। user.role হবে "user";
+interests-এ duplicate "chess" একবারই থাকবে। Response-এ password
+বা password hash থাকা উচিত নয়।
+
+Response থেকে token-টি কপি করে USER_TOKEN নামে সংরক্ষণ করুন।
+user.id-টিও USER_ID নামে কপি করে রাখুন।
+
+Email আগে থেকেই থাকলে 409 Conflict / "Email is already registered" আসবে।
+সে ক্ষেত্রে নতুন email দিয়ে আবার চেষ্টা করুন।
+
+
+2. Login
+--------
+
+Method: POST
+URL: /api/auth/login
+Headers:
+    Content-Type: application/json
+
+Body:
+{
+  "email": "test.user.one@example.com",
+  "password": "TestPass123!"
+}
+
+সফল ফল:
+    Status: 200 OK
+    Response-এ token এবং user থাকবে।
+
+token আবার কপি করুন। Protected request-এ এই token ব্যবহার করবেন।
+ভুল password হলে 401 Unauthorized আসা উচিত।
+
+
+3. নিজের profile দেখা
+---------------------
+
+Method: GET
+URL: /api/auth/me
+Authorization: Bearer USER_TOKEN
+
+সফল ফল:
+    Status: 200 OK
+    Response-এর user.id এবং email আপনার নিবন্ধিত user-এর সঙ্গে মিলবে।
+    Password response-এ থাকা উচিত নয়।
+
+এই request-এ token বাদ দিয়ে আবার পাঠালে 401 Unauthorized আসা উচিত।
+
+
+4. Note তৈরি (Create)
+---------------------
+
+Method: POST
+URL: /api/notes
+Authorization: Bearer USER_TOKEN
+Headers:
+    Content-Type: application/json
+
+Body:
+{
+  "title": "Interview preparation",
+  "content": "Review MongoDB aggregation and JWT authentication."
+}
+
+সফল ফল:
+    Status: 201 Created
+    Response shape: { "note": { ... } }
+
+Response-এর note._id কপি করে NOTE_ID নামে রাখুন।
+note.owner USER_ID-এর সঙ্গে মিলবে; title ও content পাঠানো body-এর
+সঙ্গে মিলবে।
+
+গুরুত্বপূর্ণ:
+    POST /api/notes = নতুন note তৈরি
+    GET  /api/notes = note-এর list দেখা
+GET request-এর body-তে note পাঠালে note তৈরি হবে না।
+
+
+5. নিজের note list দেখা (List + pagination)
+-------------------------------------------
+
+Method: GET
+URL: /api/notes?page=1&limit=10
+Authorization: Bearer USER_TOKEN
+Body: নেই
+
+সফল ফল:
+    Status: 200 OK
+    notes array-তে NOTE_ID-সহ তৈরি করা note থাকবে।
+    pagination.page = 1
+    pagination.limit = 10
+    pagination.totalItems কমপক্ষে 1 হবে।
+
+Page size পরীক্ষা:
+    GET /api/notes?page=1&limit=1
+এখানে notes-এ সর্বোচ্চ 1টি item এবং pagination.limit = 1 হবে।
+limit=101 দিলে 400 Bad Request আসা উচিত।
+
+
+6. নির্দিষ্ট note দেখা
+---------------------
+
+Method: GET
+URL: /api/notes/NOTE_ID
+Authorization: Bearer USER_TOKEN
+Body: নেই
+
+NOTE_ID-এর জায়গায় ধাপ 4 থেকে কপি করা ID বসান।
+সফল ফল: 200 OK, response-এ { "note": { ... } }।
+
+
+7. Note update
+-------------
+
+Method: PATCH
+URL: /api/notes/NOTE_ID
+Authorization: Bearer USER_TOKEN
+Headers:
+    Content-Type: application/json
+
+Body:
+{
+  "title": "Updated interview preparation"
+}
+
+সফল ফল: 200 OK এবং response note-এর title-এ নতুন value থাকবে।
+শুধু title অথবা শুধু content update করা যায়।
+owner, _id বা অন্য field পাঠালে request 400 হওয়া উচিত।
+
+
+8. Note delete
+-------------
+
+Method: DELETE
+URL: /api/notes/NOTE_ID
+Authorization: Bearer USER_TOKEN
+Body: নেই
+
+সফল ফল:
+    Status: 204 No Content
+এরপর GET /api/notes/NOTE_ID করলে 404 Not Found আসবে।
+
+
+9. দ্বিতীয় user দিয়ে ownership পরীক্ষা
+-------------------------------------
+
+ধাপ 1-এ অন্য email দিয়ে আরেকটি regular user register করুন; তার token
+SECOND_USER_TOKEN নামে রাখুন।
+
+SECOND_USER_TOKEN দিয়ে:
+
+    GET    /api/notes
+    GET    /api/notes/প্রথম-user-এর-NOTE_ID
+    PATCH  /api/notes/প্রথম-user-এর-NOTE_ID
+    DELETE /api/notes/প্রথম-user-এর-NOTE_ID
+
+PATCH পরীক্ষায় Body > raw > JSON-এ পাঠান:
+{
+  "title": "Unauthorized change"
+}
+
+প্রত্যাশিত ফল:
+    List-এ প্রথম user-এর note দেখা যাবে না।
+    GET/PATCH/DELETE অন্য user-এর note-এ 404 Not Found দেবে.
+
+Delete পরীক্ষাটি চালালে প্রথম user-এর note মুছে যাবে না; পরে প্রথম token
+দিয়ে নিজের note দেখা যাচ্ছে কিনা নিশ্চিত করুন।
+
+
+10. প্রথম Admin তৈরি (একবারের setup)
+------------------------------------
+
+এটি শুধু প্রথম admin account তৈরি করার জন্য। Public registration থেকে
+কেউ নিজে admin হতে পারে না—এটি নিরাপত্তার জন্য।
+
+ধাপ A: Postman দিয়ে সাধারণ account তৈরি করুন
+    POST /api/auth/register
+    ধাপ 1-এর মতো name, email ও password দিন।
+    যে email ব্যবহার করলেন, সেটি মনে রাখুন।
+
+ধাপ B: MongoDB Atlas-এ role পরিবর্তন করুন
+    1. MongoDB Atlas-এ login করুন।
+    2. আপনার API যে cluster ব্যবহার করে, সেটি খুলে "Browse Collections"
+       চাপুন।
+    3. API-এর database নির্বাচন করুন। Database-এর নাম না জানলে API/.env-এর
+       MONGODB_URI-তে database-এর নাম দেখুন। URI/secret কাউকে পাঠাবেন না।
+    4. "users" collection খুলুন।
+    5. ধাপ A-তে দেওয়া email দিয়ে user document খুঁজুন।
+    6. Document-এর Edit/pencil বোতাম চাপুন।
+    7. role-এর মান "user" থেকে "admin" করুন, তারপর Update/Save চাপুন।
+
+MongoDB Compass ব্যবহার করলে একই database-এর "users" collection খুলে,
+email দিয়ে document খুঁজে role-এর মান "admin" করে Save করুন।
+
+ধাপ C: Admin token সংগ্রহ করুন
+    1. Postman-এ POST /api/auth/login পাঠান।
+    2. ধাপ A-এর email ও password দিন।
+    3. Response-এর token copy করুন; এটিই ADMIN_TOKEN।
+    4. Admin request-এ Authorization > Bearer Token-এ শুধু token paste করুন।
+
+যাচাই করতে:
+    GET /api/admin/users?page=1&limit=10
+    ADMIN_TOKEN দিলে 200 OK আসবে।
+    সাধারণ USER_TOKEN দিলে একই request-এ 403 Forbidden আসবে।
+
+
+11. Regular user admin endpoint ব্যবহার করতে পারে কিনা
+----------------------------------------------------
+
+USER_TOKEN ব্যবহার করে পাঠান:
+
+Method: GET
+URL: /api/admin/users?page=1&limit=10
+Authorization: Bearer USER_TOKEN
+
+প্রত্যাশিত ফল:
+    Status: 403 Forbidden
+    Message: "Admin access required"
+
+
+12. Admin user list
+-------------------
+
+Method: GET
+URL: /api/admin/users?page=1&limit=10
+Authorization: Bearer ADMIN_TOKEN
+Body: নেই
+
+সফল ফল: 200 OK, response-এ users array এবং pagination object থাকবে।
+Pagination.totalItems-এ user count থাকবে। কোনো user object-এ password
+বা password hash থাকা উচিত নয়।
+
+
+13. Admin নতুন user তৈরি
+------------------------
+
+Method: POST
+URL: /api/admin/users
+Authorization: Bearer ADMIN_TOKEN
+Headers:
+    Content-Type: application/json
+
+Body:
+{
+  "name": "Admin Created User",
+  "email": "admin.created.user@example.com",
+  "password": "AnotherPass123!",
+  "role": "user",
+  "interests": ["reading", "music"]
+}
+
+সফল ফল: 201 Created, response-এ user থাকবে। Password response-এ থাকবে না।
+দেওয়া email-টি আগে ব্যবহার হয়ে থাকলে অন্য email নিন।
+
+
+14. Admin user update
+---------------------
+
+Method: PATCH
+URL: /api/admin/users/USER_ID
+Authorization: Bearer ADMIN_TOKEN
+Headers:
+    Content-Type: application/json
+
+Body:
+{
+  "name": "Updated User Name",
+  "interests": ["chess", "music"]
+}
+
+USER_ID-এর জায়গায় ধাপ 13-এর response-এর user.id বসান।
+সফল ফল: 200 OK; name/interests পরিবর্তিত থাকবে, password প্রকাশ পাবে না।
+Role পরিবর্তন করতে চাইলে Body-তে {"role":"admin"} বা {"role":"user"}
+পাঠানো যায়—শুধুমাত্র admin এই operation করতে পারে।
+
+
+15. Admin interest অনুযায়ী user group দেখা (Aggregation 1)
+----------------------------------------------------------
+
+Method: GET
+URL: /api/admin/users/grouped-by-interests?page=1&limit=10
+Authorization: Bearer ADMIN_TOKEN
+Body: নেই
+
+সফল ফল: 200 OK, response-এ groups array এবং pagination থাকবে।
+প্রতি group দেখতে এমন:
+
+{
+  "_id": "chess",
+  "users": [
+    { "id": "...", "name": "...", "email": "..." }
+  ],
+  "userCount": 1
+}
+
+আপনার test user-এর chess group-এ সে একবারই থাকা উচিত—register-এর সময়
+duplicate chess পাঠালেও count double হবে না।
+No interest থাকা user কোনো interest group-এ আসবে না।
+
+
+16. Post তৈরি
+-------------
+
+Method: POST
+URL: /api/posts
+Authorization: Bearer USER_TOKEN
+Headers:
+    Content-Type: application/json
+
+Body:
+{
+  "title": "MongoDB Notes",
+  "content": "A $lookup stage joins documents from another collection."
+}
+
+সফল ফল: 201 Created, response-এ post থাকবে।
+post._id চাইলে POST_ID নামে রাখুন। post.author USER_ID-এর সঙ্গে মিলবে।
+Post সবার জন্য দেখা যায়; create করতে login লাগবে।
+
+
+17. নির্দিষ্ট user-এর Post দেখা (Aggregation + $lookup)
+------------------------------------------------------
+
+Method: GET
+URL: /api/posts/by-user/USER_ID?page=1&limit=10
+Authorization: লাগবে না
+Body: নেই
+
+USER_ID-এর জায়গায় ধাপ 1-এর user.id বসান।
+সফল ফল: 200 OK, response-এ user, posts array এবং pagination থাকবে।
+ধাপ 16-এর POST_ID posts array-তে থাকা উচিত।
+
+Pagination পরীক্ষা:
+    GET /api/posts/by-user/USER_ID?page=1&limit=1
+সর্বোচ্চ 1টি post আসবে এবং pagination.limit হবে 1।
+অজানা কিন্তু বৈধ ObjectId দিলে 404 User not found।
+অবৈধ ID দিলে 400 Invalid user id।
+
+
+18. Admin দিয়ে user delete এবং সম্পর্কিত data মুছে যাওয়া
+------------------------------------------------------
+
+যে test user-কে মুছবেন তার USER_ID ব্যবহার করুন:
+
+Method: DELETE
+URL: /api/admin/users/USER_ID
+Authorization: Bearer ADMIN_TOKEN
+Body: নেই
+
+সফল ফল: 204 No Content।
+এরপর ওই USER_ID দিয়ে public post endpoint করলে 404 আসবে।
+Admin নিজের account delete করতে পারবে না; নিজের ID দিলে 400 আসবে।
+এই ধাপটি সব পরীক্ষা শেষে চালান, কারণ এটি user, তার notes এবং posts মুছে দেয়।
+
+
+সাধারণ Status code-এর মানে
+--------------------------
+
+200 OK          : GET বা update সফল
+201 Created     : নতুন user/note/post তৈরি
+204 No Content  : delete সফল; response body ফাঁকা থাকবে
+400 Bad Request : body, ID, বা pagination input ভুল
+401 Unauthorized: token নেই/ভুল/expired, অথবা login তথ্য ভুল
+403 Forbidden   : login করা user admin নয়
+404 Not Found   : record নেই বা এই user-এর record নয়
+409 Conflict    : email আগে থেকেই ব্যবহৃত
+500 Server Error: API/DB error; terminal-এ server log দেখুন
+
+
+প্রতিটি পরীক্ষায় কী মিলিয়ে দেখবেন
+---------------------------------
+
+1. Postman method (GET/POST/PATCH/DELETE) ঠিক আছে কিনা।
+2. URL-এ /api prefix ও resource ID ঠিক আছে কিনা।
+3. Protected endpoint-এ সঠিক token পাঠানো হয়েছে কিনা।
+4. POST/PATCH body raw JSON, Content-Type application/json কিনা।
+5. Create করলে 201, list/read/update করলে 200, delete করলে 204 কিনা।
+6. Response-এর ID, owner/author, title/content ও pagination সঠিক কিনা।
+7. Password বা password hash কোনো response-এ প্রকাশ পাচ্ছে কিনা—পাওয়া উচিত নয়।
+8. GET request-এর body ব্যবহার করবেন না; list route query string দিয়ে pagination নেয়।
+
